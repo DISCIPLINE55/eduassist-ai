@@ -343,7 +343,6 @@ serve(async (req) => {
     }
 
     const geminiKey = Deno.env.get("GEMINI_API_KEY");
-    const deepseekKey = Deno.env.get("DEEPSEEK_API_KEY");
 
     const systemPrompt = SYSTEM_PROMPTS[type];
     const userPrompt = CONTENT_TEMPLATES[type]?.(inputs);
@@ -355,99 +354,50 @@ serve(async (req) => {
       });
     }
 
-    let rawContent: string | undefined;
-    let tokensUsed = 0;
-    let lastErr = "";
-    let succeeded = false;
-
-    // ── 1. Try Gemini models (if key available) ─────────────────────────────
-    if (geminiKey) {
-      const GEMINI_MODELS = [
-        "gemini-2.5-flash",
-      ];
-
-      const geminiBody = JSON.stringify({
-        systemInstruction: { parts: [{ text: systemPrompt }] },
-        contents: [{ role: "user", parts: [{ text: userPrompt }] }],
-        generationConfig: {
-          temperature: 0.7,
-          maxOutputTokens: 8192,
-          responseMimeType: "application/json",
-        },
-      });
-
-      for (const model of GEMINI_MODELS) {
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
-        const res = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: geminiBody,
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          tokensUsed = data.usageMetadata?.totalTokenCount || 0;
-          console.log(`Generated with Gemini model: ${model}, tokens: ${tokensUsed}`);
-          succeeded = true;
-          break;
-        }
-
-        const errText = await res.text();
-        lastErr = errText;
-        console.warn(`Gemini ${model} failed (${res.status}): ${errText.substring(0, 200)}`);
-        if (res.status !== 429 && res.status !== 404) break;
-        await new Promise((r) => setTimeout(r, 800));
-      }
-    } else {
-      console.warn("GEMINI_API_KEY not set — skipping Gemini, trying DeepSeek.");
-    }
-
-    // ── 2. Fall back to DeepSeek (if Gemini failed or key missing) ───────────
-    if (!succeeded && deepseekKey) {
-      console.log("Attempting DeepSeek fallback…");
-      const dsBody = JSON.stringify({
-        model: "deepseek-chat",
-        messages: [
-          { role: "system", content: systemPrompt + "\n\nIMPORTANT: Respond with ONLY valid JSON. No markdown, no code fences, just the raw JSON object." },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 8192,
-      });
-
-      const dsRes = await fetch("https://api.deepseek.com/v1/chat/completions", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${deepseekKey}`,
-        },
-        body: dsBody,
-      });
-
-      if (dsRes.ok) {
-        const dsData = await dsRes.json();
-        rawContent = dsData.choices?.[0]?.message?.content;
-        tokensUsed = dsData.usage?.total_tokens || 0;
-        console.log(`Generated with DeepSeek, tokens: ${tokensUsed}`);
-        succeeded = true;
-      } else {
-        const errText = await dsRes.text();
-        lastErr = errText;
-        console.error(`DeepSeek failed (${dsRes.status}): ${errText.substring(0, 300)}`);
-      }
-    }
-
-    if (!succeeded) {
-      const noKeyHint = !geminiKey && !deepseekKey
-        ? " No API keys configured — add GEMINI_API_KEY or DEEPSEEK_API_KEY in Supabase Edge Function Secrets."
-        : "";
-      console.error("All AI providers failed. Last error:", lastErr);
+    if (!geminiKey) {
+      console.error("GEMINI_API_KEY not configured in Supabase secrets.");
       return new Response(
-        JSON.stringify({ error: "AI generation failed. Please try again shortly." + noKeyHint, details: lastErr }),
+        JSON.stringify({ error: "AI generation failed. GEMINI_API_KEY is not configured." }),
         { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    let rawContent: string | undefined;
+    let tokensUsed = 0;
+
+    // ── Call Gemini 2.5 Flash ─────────────────────────────────────────────────
+    const GEMINI_MODEL = "gemini-2.5-flash";
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`;
+
+    const geminiBody = JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents: [{ role: "user", parts: [{ text: userPrompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 8192,
+        responseMimeType: "application/json",
+      },
+    });
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: geminiBody,
+    });
+
+    if (!res.ok) {
+      const errText = await res.text();
+      console.error(`Gemini ${GEMINI_MODEL} failed (${res.status}): ${errText.substring(0, 300)}`);
+      return new Response(
+        JSON.stringify({ error: "AI generation failed. Please try again shortly.", details: errText }),
+        { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
+    const data = await res.json();
+    rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+    tokensUsed = data.usageMetadata?.totalTokenCount || 0;
+    console.log(`Generated with ${GEMINI_MODEL}, tokens: ${tokensUsed}`);
 
     // ── 3. Parse JSON from AI response ───────────────────────────────────────
     // Strip markdown fences if model wrapped response anyway
