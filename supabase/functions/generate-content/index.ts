@@ -365,9 +365,12 @@ serve(async (req) => {
     let rawContent: string | undefined;
     let tokensUsed = 0;
 
-    // ── Call Gemini 2.5 Flash ─────────────────────────────────────────────────
-    const GEMINI_MODEL = "gemini-2.5-flash";
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${geminiKey}`;
+    // ── Call Gemini (free tier models, in priority order) ────────────────────
+    const GEMINI_MODELS = [
+      "gemini-2.5-flash-lite",
+      "gemini-2.0-flash-lite",
+      "gemini-2.0-flash",
+    ];
 
     const geminiBody = JSON.stringify({
       systemInstruction: { parts: [{ text: systemPrompt }] },
@@ -379,25 +382,41 @@ serve(async (req) => {
       },
     });
 
-    const res = await fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: geminiBody,
-    });
+    let lastErr = "";
+    for (const model of GEMINI_MODELS) {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: geminiBody,
+      });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      console.error(`Gemini ${GEMINI_MODEL} failed (${res.status}): ${errText.substring(0, 300)}`);
+      if (res.ok) {
+        const data = await res.json();
+        rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        tokensUsed = data.usageMetadata?.totalTokenCount || 0;
+        console.log(`Generated with ${model}, tokens: ${tokensUsed}`);
+        break;
+      }
+
+      lastErr = await res.text();
+      console.warn(`Gemini ${model} failed (${res.status}): ${lastErr.substring(0, 200)}`);
+      // only retry on quota/not-found; hard-fail on auth/bad-request
+      if (res.status !== 429 && res.status !== 404) {
+        return new Response(
+          JSON.stringify({ error: "AI generation failed. Please try again shortly.", details: lastErr }),
+          { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+        );
+      }
+      await new Promise((r) => setTimeout(r, 600));
+    }
+
+    if (!rawContent) {
       return new Response(
-        JSON.stringify({ error: "AI generation failed. Please try again shortly.", details: errText }),
+        JSON.stringify({ error: "AI generation failed. Please try again shortly.", details: lastErr }),
         { status: 503, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    const data = await res.json();
-    rawContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
-    tokensUsed = data.usageMetadata?.totalTokenCount || 0;
-    console.log(`Generated with ${GEMINI_MODEL}, tokens: ${tokensUsed}`);
 
     // ── 3. Parse JSON from AI response ───────────────────────────────────────
     // Strip markdown fences if model wrapped response anyway
