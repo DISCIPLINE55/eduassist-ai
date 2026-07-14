@@ -1,0 +1,50 @@
+{
+  "expo": {
+    "name": "AI Teaching Assistant App",
+    "slug": "eduassist-ai",
+    "version": "1.0.21",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": true,
+      "buildNumber": "1",
+      "bundleIdentifier": "com.miaoda.appcvzzwynaxi4i"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "predictiveBackGestureEnabled": false,
+      "versionCode": 1,
+      "package": "com.miaoda.appcvzzwynaxi4i"
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-asset",
+      "expo-sqlite",
+      "expo-font",
+      "expo-system-ui",
+      "@react-native-async-storage/expo-with-async-storage",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "EduAssist AI needs access to your photos to upload a profile picture.",
+          "cameraPermission": "EduAssist AI needs camera access to take a profile photo."
+        }
+      ],
+      "expo-image"
+    ],
+    "router": {
+      "root": "src"
+    },
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
