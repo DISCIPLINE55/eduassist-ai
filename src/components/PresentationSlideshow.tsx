@@ -16,8 +16,7 @@ import {
   ChevronRight,
   ExternalLink,
   List,
-  Maximize2,
-} from "lucide-react-native";
+} from "lucide-react-native"; // cache-bust: ExternalLink replaces Youtube (not in lucide-react-native)
 import * as WebBrowser from "expo-web-browser";
 
 // ---- helpers ----
