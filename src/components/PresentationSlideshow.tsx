@@ -4,11 +4,13 @@ import {
   Text,
   Pressable,
   Modal,
-  ScrollView,
   FlatList,
+  ScrollView,
   useWindowDimensions,
   ViewToken,
+  Platform,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { StatusBar } from "expo-status-bar";
 import {
   X,
@@ -60,7 +62,6 @@ interface SlideData {
 
 function buildSlides(content: Record<string, unknown>): SlideData[] {
   const slides: SlideData[] = [];
-
   asArray(content.slides ?? content.presentation_slides ?? []).forEach((s, i) => {
     if (typeof s !== "object" || s === null) return;
     const sl = s as Record<string, unknown>;
@@ -80,8 +81,6 @@ function buildSlides(content: Record<string, unknown>): SlideData[] {
       exit_ticket: str(sl.exit_ticket),
     });
   });
-
-  // append assessment slide if present
   const as_ = content.assessment_slide;
   if (typeof as_ === "object" && as_ !== null) {
     const a = as_ as Record<string, unknown>;
@@ -99,22 +98,24 @@ function buildSlides(content: Record<string, unknown>): SlideData[] {
   return slides;
 }
 
-// ---- Single fullscreen slide ----
+// ---- Single fullscreen slide — fully responsive ----
 function FullSlide({
   slide,
   width,
-  height,
+  slideAreaHeight,
   theme,
   showNotes,
 }: {
   slide: SlideData;
   width: number;
-  height: number;
+  slideAreaHeight: number;
   theme: typeof SLIDE_THEMES[0];
   showNotes: boolean;
 }) {
+  // Responsive scale: base is 375pt (iPhone SE). Clamp between 0.8 and 1.3.
+  const scale = Math.min(1.3, Math.max(0.8, width / 375));
+  const pad = Math.round(20 * scale);
   const isTitle = slide.type === "Title Slide";
-  const isSummary = slide.type.includes("Summary") || slide.type.includes("Assessment");
 
   const openYouTube = useCallback(async () => {
     if (!slide.youtube_search_query) return;
@@ -127,123 +128,136 @@ function FullSlide({
   }, [slide.youtube_search_query]);
 
   return (
-    <View style={{ width, minHeight: height, backgroundColor: theme.bg, padding: 32, justifyContent: "center" }}>
-      {/* Slide number badge */}
-      <View style={{ position: "absolute", top: 20, left: 24, opacity: 0.45 }}>
-        <Text style={{ color: theme.text, fontSize: 11, fontWeight: "700", letterSpacing: 2 }}>
-          {slide.number}
+    <View style={{ width, height: slideAreaHeight, backgroundColor: theme.bg }}>
+      <ScrollView
+        contentContainerStyle={{ padding: pad, paddingTop: pad + 24, paddingBottom: showNotes ? 120 : pad }}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Slide number + type row */}
+        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+          <Text style={{ color: theme.text, fontSize: 11, fontWeight: "700", letterSpacing: 2, opacity: 0.5 }}>
+            {slide.number}
+          </Text>
+          <View style={{ backgroundColor: theme.accent + "33", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
+            <Text style={{ color: theme.accent, fontSize: 10, fontWeight: "800", letterSpacing: 1 }}>
+              {slide.type.toUpperCase()}
+            </Text>
+          </View>
+        </View>
+
+        {/* Title */}
+        <Text style={{
+          color: theme.text,
+          fontSize: Math.round((isTitle ? 28 : 22) * scale),
+          fontWeight: "900",
+          lineHeight: Math.round((isTitle ? 36 : 30) * scale),
+          marginBottom: 12,
+        }}>
+          {slide.title}
         </Text>
-      </View>
 
-      {/* Type label */}
-      <View style={{ position: "absolute", top: 20, right: 24 }}>
-        <View style={{ backgroundColor: theme.accent + "33", borderRadius: 20, paddingHorizontal: 10, paddingVertical: 4 }}>
-          <Text style={{ color: theme.accent, fontSize: 10, fontWeight: "800", letterSpacing: 1 }}>
-            {slide.type.toUpperCase()}
+        {/* Subtitle */}
+        {slide.subtitle ? (
+          <Text style={{ color: theme.sub, fontSize: Math.round(13 * scale), fontStyle: "italic", marginBottom: 16 }}>
+            {slide.subtitle}
           </Text>
-        </View>
-      </View>
+        ) : null}
 
-      {/* Title */}
-      <Text style={{
-        color: theme.text,
-        fontSize: isTitle ? 32 : 26,
-        fontWeight: "900",
-        lineHeight: isTitle ? 40 : 34,
-        marginBottom: isTitle ? 12 : 20,
-        marginTop: 28,
-      }}>
-        {slide.title}
-      </Text>
+        {/* Hook question */}
+        {slide.hook_question ? (
+          <View style={{ backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 12, padding: 12, marginBottom: 16 }}>
+            <Text style={{ color: theme.accent, fontSize: 10, fontWeight: "800", marginBottom: 4, letterSpacing: 1 }}>
+              OPENING QUESTION
+            </Text>
+            <Text style={{ color: theme.text, fontSize: Math.round(14 * scale), fontStyle: "italic", lineHeight: Math.round(22 * scale) }}>
+              "{slide.hook_question}"
+            </Text>
+          </View>
+        ) : null}
 
-      {/* Subtitle (title slides) */}
-      {slide.subtitle ? (
-        <Text style={{ color: theme.sub, fontSize: 14, fontStyle: "italic", marginBottom: 20 }}>
-          {slide.subtitle}
-        </Text>
-      ) : null}
+        {/* Bullet points */}
+        {slide.bullet_points.length > 0 ? (
+          <View style={{ gap: 10, marginBottom: 14 }}>
+            {slide.bullet_points.map((b, i) => (
+              <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
+                <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: theme.accent, marginTop: Math.round(7 * scale), flexShrink: 0 }} />
+                <Text style={{ color: theme.text, fontSize: Math.round(14 * scale), lineHeight: Math.round(21 * scale), flex: 1 }}>{b}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
-      {/* Hook question */}
-      {slide.hook_question ? (
-        <View style={{ backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 14, padding: 14, marginBottom: 20 }}>
-          <Text style={{ color: theme.accent, fontSize: 11, fontWeight: "800", marginBottom: 4, letterSpacing: 1 }}>
-            OPENING QUESTION
-          </Text>
-          <Text style={{ color: theme.text, fontSize: 16, fontStyle: "italic", lineHeight: 24 }}>
-            "{slide.hook_question}"
-          </Text>
-        </View>
-      ) : null}
+        {/* Recap questions */}
+        {(slide.recap_questions ?? []).length > 0 ? (
+          <View style={{ gap: 8, marginBottom: 14 }}>
+            <Text style={{ color: theme.accent, fontSize: 10, fontWeight: "800", letterSpacing: 1, marginBottom: 4 }}>
+              RECAP QUESTIONS
+            </Text>
+            {(slide.recap_questions ?? []).map((q, i) => (
+              <View key={i} style={{ flexDirection: "row", gap: 8 }}>
+                <Text style={{ color: theme.accent, fontWeight: "800", fontSize: Math.round(13 * scale) }}>{i + 1}.</Text>
+                <Text style={{ color: theme.text, fontSize: Math.round(13 * scale), lineHeight: Math.round(20 * scale), flex: 1 }}>{q}</Text>
+              </View>
+            ))}
+          </View>
+        ) : null}
 
-      {/* Bullet points */}
-      {slide.bullet_points.length > 0 ? (
-        <View style={{ gap: 10, marginBottom: 16 }}>
-          {slide.bullet_points.map((b, i) => (
-            <View key={i} style={{ flexDirection: "row", alignItems: "flex-start", gap: 10 }}>
-              <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: theme.accent, marginTop: 6, flexShrink: 0 }} />
-              <Text style={{ color: theme.text, fontSize: 15, lineHeight: 22, flex: 1 }}>{b}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
+        {/* Exit ticket */}
+        {slide.exit_ticket ? (
+          <View style={{ backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 10, padding: 10, marginBottom: 10, borderLeftWidth: 3, borderLeftColor: theme.accent }}>
+            <Text style={{ color: theme.accent, fontSize: 9, fontWeight: "800", marginBottom: 3, letterSpacing: 1 }}>EXIT TICKET</Text>
+            <Text style={{ color: theme.text, fontSize: Math.round(12 * scale), fontStyle: "italic", lineHeight: Math.round(18 * scale) }}>{slide.exit_ticket}</Text>
+          </View>
+        ) : null}
 
-      {/* Recap questions (summary slide) */}
-      {(slide.recap_questions ?? []).length > 0 ? (
-        <View style={{ gap: 8, marginBottom: 16 }}>
-          <Text style={{ color: theme.accent, fontSize: 11, fontWeight: "800", letterSpacing: 1, marginBottom: 4 }}>
-            RECAP QUESTIONS
-          </Text>
-          {(slide.recap_questions ?? []).map((q, i) => (
-            <View key={i} style={{ flexDirection: "row", gap: 8 }}>
-              <Text style={{ color: theme.accent, fontWeight: "800", fontSize: 14 }}>{i + 1}.</Text>
-              <Text style={{ color: theme.text, fontSize: 14, lineHeight: 20, flex: 1 }}>{q}</Text>
-            </View>
-          ))}
-        </View>
-      ) : null}
+        {/* Real-world connection */}
+        {slide.real_world_connection ? (
+          <View style={{ backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 10, padding: 10, marginBottom: 10 }}>
+            <Text style={{ color: theme.accent, fontSize: 9, fontWeight: "800", marginBottom: 3, letterSpacing: 1 }}>🌍 REAL WORLD — GHANA</Text>
+            <Text style={{ color: theme.sub, fontSize: Math.round(12 * scale), lineHeight: Math.round(18 * scale) }}>{slide.real_world_connection}</Text>
+          </View>
+        ) : null}
 
-      {/* Exit ticket */}
-      {slide.exit_ticket ? (
-        <View style={{ backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 12, padding: 12, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: theme.accent }}>
-          <Text style={{ color: theme.accent, fontSize: 10, fontWeight: "800", marginBottom: 4, letterSpacing: 1 }}>EXIT TICKET</Text>
-          <Text style={{ color: theme.text, fontSize: 13, fontStyle: "italic", lineHeight: 19 }}>{slide.exit_ticket}</Text>
-        </View>
-      ) : null}
+        {/* Activity */}
+        {slide.activity_prompt ? (
+          <View style={{ backgroundColor: "rgba(255,200,50,0.15)", borderRadius: 10, padding: 10, marginBottom: 10, borderLeftWidth: 3, borderLeftColor: "#fbbf24" }}>
+            <Text style={{ color: "#fbbf24", fontSize: 9, fontWeight: "800", marginBottom: 3, letterSpacing: 1 }}>✋ ACTIVITY</Text>
+            <Text style={{ color: theme.text, fontSize: Math.round(12 * scale), lineHeight: Math.round(18 * scale) }}>{slide.activity_prompt}</Text>
+          </View>
+        ) : null}
 
-      {/* Real-world connection */}
-      {slide.real_world_connection ? (
-        <View style={{ backgroundColor: "rgba(255,255,255,0.1)", borderRadius: 12, padding: 12, marginBottom: 12 }}>
-          <Text style={{ color: theme.accent, fontSize: 10, fontWeight: "800", marginBottom: 4, letterSpacing: 1 }}>🌍 REAL WORLD — GHANA</Text>
-          <Text style={{ color: theme.sub, fontSize: 13, lineHeight: 19 }}>{slide.real_world_connection}</Text>
-        </View>
-      ) : null}
+        {/* YouTube button — full width on small screens */}
+        {slide.youtube_search_query ? (
+          <Pressable
+            onPress={openYouTube}
+            style={{
+              flexDirection: "row", alignItems: "center", justifyContent: "center",
+              gap: 8, backgroundColor: "#dc2626", borderRadius: 12,
+              paddingHorizontal: 14, paddingVertical: 12, marginTop: 8,
+            }}
+          >
+            <ExternalLink size={16} color="#fff" />
+            <Text style={{ color: "#fff", fontWeight: "700", fontSize: Math.round(13 * scale) }}>
+              {slide.youtube_featured ? "▶  Watch Featured Video on YouTube" : "▶  Find on YouTube"}
+            </Text>
+          </Pressable>
+        ) : null}
+      </ScrollView>
 
-      {/* Activity */}
-      {slide.activity_prompt ? (
-        <View style={{ backgroundColor: "rgba(255,200,50,0.15)", borderRadius: 12, padding: 12, marginBottom: 12, borderLeftWidth: 3, borderLeftColor: "#fbbf24" }}>
-          <Text style={{ color: "#fbbf24", fontSize: 10, fontWeight: "800", marginBottom: 4, letterSpacing: 1 }}>✋ ACTIVITY</Text>
-          <Text style={{ color: theme.text, fontSize: 13, lineHeight: 19 }}>{slide.activity_prompt}</Text>
-        </View>
-      ) : null}
-
-      {/* YouTube button */}
-      {slide.youtube_search_query ? (
-        <Pressable
-          onPress={openYouTube}
-          style={{ flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#dc2626", borderRadius: 12, paddingHorizontal: 14, paddingVertical: 10, alignSelf: "flex-start", marginTop: 8 }}
-        >
-          <ExternalLink size={16} color="#fff" />
-          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>
-            {slide.youtube_featured ? "Watch Featured Video" : "Find on YouTube"}
-          </Text>
-        </Pressable>
-      ) : null}
-
-      {/* Speaker notes overlay (toggle) */}
+      {/* Speaker notes overlay (toggle) — fixed to bottom of slide area */}
       {showNotes && slide.speaker_notes ? (
-        <View style={{ position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.85)", padding: 16, borderTopLeftRadius: 16, borderTopRightRadius: 16 }}>
+        <View style={{
+          position: "absolute", bottom: 0, left: 0, right: 0,
+          backgroundColor: "rgba(0,0,0,0.88)", padding: 14,
+          borderTopLeftRadius: 14, borderTopRightRadius: 14,
+          maxHeight: slideAreaHeight * 0.35,
+        }}>
           <Text style={{ color: "#fbbf24", fontSize: 10, fontWeight: "800", marginBottom: 4, letterSpacing: 1 }}>🎤 SPEAKER NOTES</Text>
-          <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: 12, lineHeight: 18 }}>{slide.speaker_notes}</Text>
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <Text style={{ color: "rgba(255,255,255,0.85)", fontSize: Math.round(12 * scale), lineHeight: Math.round(18 * scale) }}>
+              {slide.speaker_notes}
+            </Text>
+          </ScrollView>
         </View>
       ) : null}
     </View>
@@ -268,16 +282,11 @@ function SlideThumbnail({
     <Pressable
       onPress={onPress}
       style={{
-        width: 80,
-        height: 52,
-        borderRadius: 8,
-        backgroundColor: theme.bg,
-        marginRight: 8,
+        width: 80, height: 52, borderRadius: 8,
+        backgroundColor: theme.bg, marginRight: 8,
         borderWidth: active ? 2 : 1,
         borderColor: active ? theme.accent : "rgba(255,255,255,0.2)",
-        overflow: "hidden",
-        justifyContent: "center",
-        padding: 6,
+        overflow: "hidden", justifyContent: "center", padding: 6,
       }}
     >
       <Text style={{ color: theme.text, fontSize: 6, fontWeight: "800", marginBottom: 2, opacity: 0.6 }}>
@@ -303,6 +312,7 @@ export function PresentationSlideshow({
   presentationTitle: string;
 }) {
   const { width, height } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [currentIndex, setCurrentIndex] = useState(0);
   const [showNotes, setShowNotes] = useState(false);
   const [showThumbs, setShowThumbs] = useState(false);
@@ -311,6 +321,12 @@ export function PresentationSlideshow({
 
   const slides = buildSlides(content);
   const total = slides.length;
+
+  // Responsive layout measurements
+  const topBarH = 52 + insets.top;           // close / title / counter row
+  const bottomNavH = 100 + insets.bottom;    // dots + prev/next row
+  const thumbStripH = showThumbs ? 76 : 0;
+  const slideAreaH = height - topBarH - bottomNavH - thumbStripH;
 
   const onViewableItemsChanged = useRef(({ viewableItems }: { viewableItems: ViewToken[] }) => {
     if (viewableItems.length > 0 && viewableItems[0].index != null) {
@@ -328,37 +344,51 @@ export function PresentationSlideshow({
 
   if (slides.length === 0) return null;
 
+  // small screen: collapse label text to icon-only
+  const isSmall = width < 360;
+
   return (
     <Modal visible={visible} animationType="fade" statusBarTranslucent onRequestClose={onClose}>
       <StatusBar style="light" backgroundColor="#000" />
       <View style={{ flex: 1, backgroundColor: "#000" }}>
 
-        {/* Top bar */}
-        <View style={{ flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingTop: 52, paddingBottom: 10, gap: 12 }}>
-          <Pressable onPress={onClose} style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" }}>
+        {/* ── Top bar ── */}
+        <View style={{
+          flexDirection: "row", alignItems: "center",
+          paddingHorizontal: 12, paddingTop: insets.top + 10,
+          paddingBottom: 8, gap: 8, height: topBarH,
+        }}>
+          <Pressable
+            onPress={onClose}
+            style={{ width: 40, height: 40, borderRadius: 20, backgroundColor: "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" }}
+          >
             <X size={18} color="#fff" />
           </Pressable>
-          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 14, flex: 1 }} numberOfLines={1}>
+          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13, flex: 1 }} numberOfLines={1}>
             {presentationTitle}
           </Text>
-          <Text style={{ color: "rgba(255,255,255,0.55)", fontSize: 13, fontWeight: "600" }}>
-            {currentIndex + 1} / {total}
+          <Text style={{ color: "rgba(255,255,255,0.55)", fontSize: 12, fontWeight: "600", minWidth: 32, textAlign: "right" }}>
+            {currentIndex + 1}/{total}
           </Text>
           <Pressable
             onPress={() => setShowNotes(n => !n)}
-            style={{ paddingHorizontal: 10, paddingVertical: 6, borderRadius: 20, backgroundColor: showNotes ? "#fbbf24" : "rgba(255,255,255,0.15)" }}
+            style={{
+              paddingHorizontal: isSmall ? 8 : 10, paddingVertical: 6,
+              borderRadius: 20, backgroundColor: showNotes ? "#fbbf24" : "rgba(255,255,255,0.15)",
+              minWidth: 40, alignItems: "center",
+            }}
           >
-            <Text style={{ color: showNotes ? "#000" : "#fff", fontSize: 11, fontWeight: "700" }}>NOTES</Text>
+            <Text style={{ color: showNotes ? "#000" : "#fff", fontSize: 10, fontWeight: "800" }}>NOTES</Text>
           </Pressable>
           <Pressable
             onPress={() => setShowThumbs(s => !s)}
-            style={{ width: 34, height: 34, borderRadius: 17, backgroundColor: showThumbs ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" }}
+            style={{ width: 36, height: 36, borderRadius: 18, backgroundColor: showThumbs ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.15)", alignItems: "center", justifyContent: "center" }}
           >
             <List size={16} color="#fff" />
           </Pressable>
         </View>
 
-        {/* Slide FlatList — horizontal swipe */}
+        {/* ── Slide area ── */}
         <FlatList
           ref={flatRef}
           data={slides}
@@ -369,57 +399,21 @@ export function PresentationSlideshow({
           onViewableItemsChanged={onViewableItemsChanged}
           viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
           getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+          style={{ height: slideAreaH, flexGrow: 0 }}
           renderItem={({ item, index }) => (
             <FullSlide
               slide={item}
               width={width}
-              height={height - 160}
+              slideAreaHeight={slideAreaH}
               theme={theme(index)}
               showNotes={showNotes}
             />
           )}
         />
 
-        {/* Bottom nav */}
-        <View style={{ paddingBottom: 32, paddingTop: 12, paddingHorizontal: 24, gap: 12 }}>
-          {/* Dot indicators */}
-          <View style={{ flexDirection: "row", justifyContent: "center", gap: 6, flexWrap: "wrap" }}>
-            {slides.map((_, i) => (
-              <Pressable key={i} onPress={() => goTo(i)}>
-                <View style={{
-                  width: i === currentIndex ? 20 : 7,
-                  height: 7,
-                  borderRadius: 4,
-                  backgroundColor: i === currentIndex ? theme(currentIndex).accent : "rgba(255,255,255,0.3)",
-                }} />
-              </Pressable>
-            ))}
-          </View>
-
-          {/* Prev / Next */}
-          <View style={{ flexDirection: "row", gap: 12 }}>
-            <Pressable
-              onPress={() => goTo(currentIndex - 1)}
-              disabled={currentIndex === 0}
-              style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: currentIndex === 0 ? "rgba(255,255,255,0.08)" : "rgba(255,255,255,0.18)", borderRadius: 16, paddingVertical: 12 }}
-            >
-              <ChevronLeft size={18} color={currentIndex === 0 ? "rgba(255,255,255,0.3)" : "#fff"} />
-              <Text style={{ color: currentIndex === 0 ? "rgba(255,255,255,0.3)" : "#fff", fontWeight: "700", fontSize: 14 }}>Previous</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => goTo(currentIndex + 1)}
-              disabled={currentIndex === total - 1}
-              style={{ flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, backgroundColor: currentIndex === total - 1 ? "rgba(255,255,255,0.08)" : theme(currentIndex).accent + "cc", borderRadius: 16, paddingVertical: 12 }}
-            >
-              <Text style={{ color: currentIndex === total - 1 ? "rgba(255,255,255,0.3)" : "#fff", fontWeight: "700", fontSize: 14 }}>Next</Text>
-              <ChevronRight size={18} color={currentIndex === total - 1 ? "rgba(255,255,255,0.3)" : "#fff"} />
-            </Pressable>
-          </View>
-        </View>
-
-        {/* Thumbnail strip (toggleable) */}
+        {/* ── Thumbnail strip ── */}
         {showThumbs ? (
-          <View style={{ position: "absolute", bottom: 130, left: 0, right: 0, backgroundColor: "rgba(0,0,0,0.9)", paddingVertical: 12, paddingHorizontal: 16 }}>
+          <View style={{ height: thumbStripH, backgroundColor: "rgba(0,0,0,0.92)", paddingVertical: 10, paddingHorizontal: 12 }}>
             <FlatList
               ref={thumbRef}
               data={slides}
@@ -438,7 +432,66 @@ export function PresentationSlideshow({
             />
           </View>
         ) : null}
+
+        {/* ── Bottom nav ── */}
+        <View style={{ height: bottomNavH, paddingTop: 8, paddingBottom: insets.bottom + 10, paddingHorizontal: 16, gap: 8 }}>
+          {/* Dot indicators — wrap on large decks */}
+          <View style={{ flexDirection: "row", justifyContent: "center", gap: 5, flexWrap: "wrap", minHeight: 12 }}>
+            {slides.map((_, i) => (
+              <Pressable
+                key={i}
+                onPress={() => goTo(i)}
+                hitSlop={8}
+                style={{ padding: 2 }}
+              >
+                <View style={{
+                  width: i === currentIndex ? 18 : 6,
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: i === currentIndex ? theme(currentIndex).accent : "rgba(255,255,255,0.25)",
+                }} />
+              </Pressable>
+            ))}
+          </View>
+
+          {/* Prev / Next */}
+          <View style={{ flexDirection: "row", gap: 10, flex: 1 }}>
+            <Pressable
+              onPress={() => goTo(currentIndex - 1)}
+              disabled={currentIndex === 0}
+              style={{
+                flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+                backgroundColor: currentIndex === 0 ? "rgba(255,255,255,0.07)" : "rgba(255,255,255,0.18)",
+                borderRadius: 14, paddingVertical: 0,
+              }}
+            >
+              <ChevronLeft size={18} color={currentIndex === 0 ? "rgba(255,255,255,0.25)" : "#fff"} />
+              {!isSmall && (
+                <Text style={{ color: currentIndex === 0 ? "rgba(255,255,255,0.25)" : "#fff", fontWeight: "700", fontSize: 13 }}>
+                  Prev
+                </Text>
+              )}
+            </Pressable>
+            <Pressable
+              onPress={() => goTo(currentIndex + 1)}
+              disabled={currentIndex === total - 1}
+              style={{
+                flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6,
+                backgroundColor: currentIndex === total - 1 ? "rgba(255,255,255,0.07)" : theme(currentIndex).accent + "cc",
+                borderRadius: 14,
+              }}
+            >
+              {!isSmall && (
+                <Text style={{ color: currentIndex === total - 1 ? "rgba(255,255,255,0.25)" : "#fff", fontWeight: "700", fontSize: 13 }}>
+                  Next
+                </Text>
+              )}
+              <ChevronRight size={18} color={currentIndex === total - 1 ? "rgba(255,255,255,0.25)" : "#fff"} />
+            </Pressable>
+          </View>
+        </View>
       </View>
     </Modal>
   );
 }
+

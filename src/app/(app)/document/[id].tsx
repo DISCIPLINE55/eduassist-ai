@@ -507,25 +507,28 @@ export default function DocumentViewerScreen() {
       ) : null}
 
       {/* Action bar */}
-      <View className="flex-row px-4 py-3 border-b border-border gap-2">
+      <View className="flex-row px-2 py-2 border-b border-border gap-1">
         {([
           { icon: Share2, label: "Share", onPress: handleShare, destructive: false, loading: false },
-          { icon: FileDown, label: exportingPdf ? "…" : "Export PDF", onPress: handleExportPdf, destructive: false, loading: exportingPdf },
+          { icon: FileDown, label: exportingPdf ? "…" : "PDF", onPress: handleExportPdf, destructive: false, loading: exportingPdf },
           { icon: Copy, label: "Duplicate", onPress: handleDuplicate, destructive: false, loading: false },
           { icon: Trash2, label: "Delete", onPress: () => setShowDeleteConfirm(true), destructive: true, loading: false },
         ] as const).map(({ icon: ActionIcon, label, onPress, destructive, loading: itemLoading }) => (
           <Pressable
             key={label}
-            className="flex-1 flex-col items-center gap-1 py-2 rounded-xl active:opacity-70"
-            style={{ backgroundColor: destructive ? "#FEE2E2" : undefined }}
+            className="flex-1 flex-col items-center gap-0.5 py-2 px-1 rounded-xl active:opacity-70"
+            style={{ backgroundColor: destructive ? "#FEE2E2" : undefined, minWidth: 0 }}
             onPress={onPress}
             disabled={busy || itemLoading}
           >
             {itemLoading
               ? <ActivityIndicator size="small" color={destructive ? "#DC2626" : "#166834"} />
-              : <ActionIcon size={18} color={destructive ? "#DC2626" : undefined} className={destructive ? "" : "text-foreground"} />
+              : <ActionIcon size={17} color={destructive ? "#DC2626" : undefined} className={destructive ? "" : "text-foreground"} />
             }
-            <Text className={`text-xs font-medium ${destructive ? "text-destructive" : "text-foreground"}`}>{label}</Text>
+            <Text
+              className={`text-xs font-medium ${destructive ? "text-destructive" : "text-foreground"}`}
+              numberOfLines={1}
+            >{label}</Text>
           </Pressable>
         ))}
       </View>

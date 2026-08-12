@@ -41,11 +41,11 @@ function NumberedItem({ index, text }: { index: number; text: string }) {
 function InfoRow({ label, value }: { label: string; value?: string | null }) {
   if (!value) return null;
   return (
-    <View className="flex-row gap-2 mb-1.5 items-start">
-      <Text className="text-xs font-semibold text-muted-foreground w-28 flex-shrink-0 mt-0.5">
+    <View className="flex-row gap-2 mb-1.5 items-start flex-wrap">
+      <Text className="text-xs font-semibold text-muted-foreground flex-shrink-0 mt-0.5" style={{ minWidth: 72, maxWidth: 112 }}>
         {label}
       </Text>
-      <Text className="text-sm text-foreground flex-1">{value}</Text>
+      <Text className="text-sm text-foreground flex-1" style={{ minWidth: 120 }}>{value}</Text>
     </View>
   );
 }
